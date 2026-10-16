@@ -244,6 +244,16 @@ def main():
         "sem_venda": cobertura_minima_sem_venda_dias,
     }
 
+    reducao_excesso_percentual = st.sidebar.number_input(
+        "Redução do alvo para excesso (%)",
+        min_value=0,
+        max_value=100,
+        value=20,
+        step=5,
+        help="Reduz o estoque alvo em X% para SKUs com ação 'Reduzir estoque' ou 'Produzir sob pedido / reduzir estoque'.",
+    )
+    fator_reducao_excesso = reducao_excesso_percentual / 100
+
     # ── Sidebar: Capacidade de PA ────────────────────────────────────────────
 
     st.sidebar.header("Capacidade de PA")
@@ -335,6 +345,7 @@ def main():
         resumo_lead_time,
         parametros_cobertura,
         dias_uteis,
+        fator_reducao_excesso=fator_reducao_excesso,
     )
 
     resultado_final, tempo_disponivel_min_mes = proc.calcular_takt_time(

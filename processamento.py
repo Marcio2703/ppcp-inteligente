@@ -466,6 +466,7 @@ def calcular_estoque_e_acao(
     resumo_lead_time=None,
     parametros_cobertura=None,
     dias_uteis_mes=30,
+    fator_reducao_excesso=0.20,
 ):
     """
     Calcula a política híbrida de estoque e a ação recomendada por SKU.
@@ -632,6 +633,37 @@ def calcular_estoque_e_acao(
         "ação_recomendada",
     ] = "Produzir somente se houver pedido ou risco comercial"
     tabela.loc[tabela["classificação"] == "Sem venda", "ação_recomendada"] = "Não produzir"
+
+    # Redução do estoque alvo para SKUs com excesso confirmado
+    # Para "Reduzir estoque" e "Produzir sob pedido / reduzir estoque",
+    # o alvo é reduzido pelo fator configurado (padrão 20%)
+    if fator_reducao_excesso > 0:
+        acoes_com_reducao = {
+            "Reduzir estoque",
+            "Produzir sob pedido / reduzir estoque",
+        }
+        mascara_reducao = tabela["ação_recomendada"].isin(acoes_com_reducao)
+        fator_multiplicador = 1.0 - fator_reducao_excesso
+        tabela.loc[mascara_reducao, "estoque_alvo_pacotes"] = (
+            tabela.loc[mascara_reducao, "estoque_alvo_pacotes"] * fator_multiplicador
+        )
+        tabela.loc[mascara_reducao, "estoque_alvo_kg"] = (
+            tabela.loc[mascara_reducao, "estoque_alvo_kg"] * fator_multiplicador
+        )
+        tabela["reducao_excesso_aplicada"] = np.where(mascara_reducao, f"-{fator_reducao_excesso:.0%}", "—")
+        # Recalcula saldos e sugestão de produção com o novo alvo
+        tabela["saldo_vs_alvo_pacotes"] = (
+            tabela["estoque atual pacotes"] - tabela["estoque_alvo_pacotes"]
+        )
+        tabela["saldo_vs_alvo_kg"] = tabela["estoque atual kg"] - tabela["estoque_alvo_kg"]
+        tabela["quantidade sugerida para produzir pacotes"] = np.maximum(
+            tabela["estoque_alvo_pacotes"] - tabela["estoque atual pacotes"], 0
+        )
+        tabela["quantidade sugerida para produzir kg"] = np.maximum(
+            tabela["estoque_alvo_kg"] - tabela["estoque atual kg"], 0
+        )
+    else:
+        tabela["reducao_excesso_aplicada"] = "—"
 
     # Arredondamentos finais
     for coluna in [
