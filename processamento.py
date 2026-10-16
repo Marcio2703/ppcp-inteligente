@@ -634,24 +634,62 @@ def calcular_estoque_e_acao(
     ] = "Produzir somente se houver pedido ou risco comercial"
     tabela.loc[tabela["classificação"] == "Sem venda", "ação_recomendada"] = "Não produzir"
 
-    # Redução do estoque alvo para SKUs com excesso confirmado
+    # Simulação de redução de estoque para SKUs com excesso
     # Para "Reduzir estoque" e "Produzir sob pedido / reduzir estoque",
-    # o alvo é reduzido pelo fator configurado (padrão 20%)
-    if fator_reducao_excesso > 0:
-        acoes_com_reducao = {
-            "Reduzir estoque",
-            "Produzir sob pedido / reduzir estoque",
-        }
-        mascara_reducao = tabela["ação_recomendada"].isin(acoes_com_reducao)
+    # simula uma redução do estoque atual pelo fator configurado (padrão 20%)
+    # e reclassifica a ação com base no estoque simulado.
+    acoes_com_excesso = {"Reduzir estoque", "Produzir sob pedido / reduzir estoque"}
+    mascara_excesso = tabela["ação_recomendada"].isin(acoes_com_excesso)
+
+    if fator_reducao_excesso > 0 and mascara_excesso.any():
         fator_multiplicador = 1.0 - fator_reducao_excesso
-        tabela.loc[mascara_reducao, "estoque_alvo_pacotes"] = (
-            tabela.loc[mascara_reducao, "estoque_alvo_pacotes"] * fator_multiplicador
+        # Calcula estoque simulado após redução planejada (só para SKUs em excesso)
+        estoque_sim_pac = tabela["estoque atual pacotes"].copy()
+        estoque_sim_kg = tabela["estoque atual kg"].copy()
+        estoque_sim_pac = estoque_sim_pac.where(~mascara_excesso, estoque_sim_pac * fator_multiplicador)
+        estoque_sim_kg = estoque_sim_kg.where(~mascara_excesso, estoque_sim_kg * fator_multiplicador)
+
+        # Reclassifica ação com estoque simulado (mesma lógica da classificação original)
+        tabela["ação_recomendada"] = "Manter monitoramento"
+        tabela.loc[
+            estoque_sim_pac < tabela["estoque_minimo_pacotes"],
+            "ação_recomendada",
+        ] = "Produzir urgente"
+        tabela.loc[
+            (estoque_sim_pac >= tabela["estoque_minimo_pacotes"])
+            & (estoque_sim_pac < tabela["estoque_alvo_pacotes"]),
+            "ação_recomendada",
+        ] = "Programar produção"
+        tabela.loc[
+            estoque_sim_pac > tabela["estoque_alvo_pacotes"] * 1.3,
+            "ação_recomendada",
+        ] = "Reduzir estoque"
+        tabela.loc[
+            (tabela["classificação"] == "Intermitente")
+            & (estoque_sim_pac > tabela["estoque_alvo_pacotes"]),
+            "ação_recomendada",
+        ] = "Produzir sob pedido / reduzir estoque"
+        tabela.loc[
+            (tabela["classificação"] == "Intermitente")
+            & (estoque_sim_pac < tabela["estoque_minimo_pacotes"]),
+            "ação_recomendada",
+        ] = "Produzir somente se houver pedido ou risco comercial"
+        tabela.loc[tabela["classificação"] == "Sem venda", "ação_recomendada"] = "Não produzir"
+
+        tabela["reducao_excesso_aplicada"] = np.where(
+            mascara_excesso, f"-{fator_reducao_excesso:.0%}", "—"
         )
-        tabela.loc[mascara_reducao, "estoque_alvo_kg"] = (
-            tabela.loc[mascara_reducao, "estoque_alvo_kg"] * fator_multiplicador
+        # Recalcula saldo e sugestão com estoque simulado
+        tabela["saldo_vs_alvo_pacotes"] = estoque_sim_pac - tabela["estoque_alvo_pacotes"]
+        tabela["saldo_vs_alvo_kg"] = estoque_sim_kg - tabela["estoque_alvo_kg"]
+        tabela["quantidade sugerida para produzir pacotes"] = np.maximum(
+            tabela["estoque_alvo_pacotes"] - estoque_sim_pac, 0
         )
-        tabela["reducao_excesso_aplicada"] = np.where(mascara_reducao, f"-{fator_reducao_excesso:.0%}", "—")
-        # Recalcula saldos e sugestão de produção com o novo alvo
+        tabela["quantidade sugerida para produzir kg"] = np.maximum(
+            tabela["estoque_alvo_kg"] - estoque_sim_kg, 0
+        )
+    else:
+        tabela["reducao_excesso_aplicada"] = "—"
         tabela["saldo_vs_alvo_pacotes"] = (
             tabela["estoque atual pacotes"] - tabela["estoque_alvo_pacotes"]
         )
@@ -662,8 +700,6 @@ def calcular_estoque_e_acao(
         tabela["quantidade sugerida para produzir kg"] = np.maximum(
             tabela["estoque_alvo_kg"] - tabela["estoque atual kg"], 0
         )
-    else:
-        tabela["reducao_excesso_aplicada"] = "—"
 
     # Arredondamentos finais
     for coluna in [

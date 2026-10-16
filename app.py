@@ -245,12 +245,17 @@ def main():
     }
 
     reducao_excesso_percentual = st.sidebar.number_input(
-        "Redução do alvo para excesso (%)",
+        "Projeção de redução do estoque excesso (%)",
         min_value=0,
         max_value=100,
         value=20,
         step=5,
-        help="Reduz o estoque alvo em X% para SKUs com ação 'Reduzir estoque' ou 'Produzir sob pedido / reduzir estoque'.",
+        help=(
+            "Simula uma redução de X% no estoque atual dos SKUs em excesso "
+            "('Reduzir estoque' ou 'Produzir sob pedido / reduzir estoque'). "
+            "A ação recomendada é recalculada com o estoque simulado — "
+            "SKUs com excesso moderado podem ser reclassificados para 'Manter' ou 'Programar produção'."
+        ),
     )
     fator_reducao_excesso = reducao_excesso_percentual / 100
 
