@@ -38,6 +38,20 @@ CODIGOS_EXCECAO_25_KG = {
     "JUR38P",
     "CRA42",
     "JUR42P",
+    # QUA codes: números no código são referências internas, não peso
+    "QUA402A",
+    "QUA543A",
+    "QUA9960",
+}
+
+# Códigos a desconsiderar no cálculo de estoque (terceirizados, não-produtos)
+CODIGOS_DESCONSIDERAR = {
+    "MOD2205",  # não é produto
+    "BBC",      # item terceirizado
+    "BBF",      # item terceirizado
+    "BBSC",     # item terceirizado
+    "BPGBD",    # item terceirizado
+    "BPGCM",    # item terceirizado
 }
 
 # Ações que indicam recomendação de produzir
@@ -246,17 +260,26 @@ def extrair_peso_pacote(codigo):
     """
     Extrai o peso do pacote em kg a partir do código do SKU.
 
-    Regras:
-    - Se o código estiver em CODIGOS_EXCECAO_25_KG → 25,0 kg
-    - Caso contrário, extrai o último número do código como peso em kg
+    Regras (em ordem de prioridade):
+    1. Código em CODIGOS_DESCONSIDERAR → NaN (excluído do cálculo)
+    2. Código em CODIGOS_EXCECAO_25_KG → 25,0 kg
+    3. Código termina com "AG" ou "AM" → 3,0 kg (amostra grátis)
+    4. Caso contrário, extrai o último número do código como peso em kg
 
     Retorna
     -------
     (float, str): (peso_kg, regra_aplicada)
     """
     codigo_normalizado = normalizar_codigo(codigo)
+
+    if codigo_normalizado in CODIGOS_DESCONSIDERAR:
+        return np.nan, "Desconsiderado"
+
     if codigo_normalizado in CODIGOS_EXCECAO_25_KG:
         return 25.0, "Exceção 25 kg"
+
+    if codigo_normalizado.endswith("AG") or codigo_normalizado.endswith("AM"):
+        return 3.0, "Amostra grátis 3 kg"
 
     numeros = re.findall(r"\d+", codigo_normalizado)
     if not numeros:
