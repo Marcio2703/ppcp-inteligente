@@ -1199,11 +1199,6 @@ def calcular_estoque_qualificado(resultado, capacidade_maxima_kg=900_000):
         if "ação_recomendada" in resultado.columns
         else resultado.get("ação recomendada", pd.Series([""] * total))
     )
-    # SKUs qualificados: risco OK e sem excesso (exclui "Reduzir estoque" e
-    # "Produzir sob pedido / reduzir estoque", pois ambos indicam excesso de estoque)
-    acoes_excesso = {"Reduzir estoque", "Produzir sob pedido / reduzir estoque"}
-    qualificados_mask = (resultado["risco_ruptura"] == "OK") & (~acao.isin(acoes_excesso))
-
     # KPIs de capacidade física
     col_estoque_kg = "estoque atual kg"
     col_alvo_kg = "estoque_alvo_kg"
@@ -1216,11 +1211,20 @@ def calcular_estoque_qualificado(resultado, capacidade_maxima_kg=900_000):
         resultado[col_alvo_kg].fillna(0).sum()
     ) if col_alvo_kg in resultado.columns else 0.0
 
-    # Estoque qualificado = soma dos ALVOS dos SKUs qualificados
-    # (usa alvo, não atual, para garantir que qualificado ≤ alvo total)
-    estoque_qualificado_kg = float(
-        resultado.loc[qualificados_mask, col_alvo_kg].fillna(0).sum()
-    ) if col_alvo_kg in resultado.columns else 0.0
+    # Estoque qualificado = soma de min(atual, alvo) por SKU
+    # Para SKUs em excesso: conta apenas o alvo (o excesso não é "necessário")
+    # Para SKUs em déficit: conta apenas o atual (não temos mais do que isso)
+    # Garante sempre: qualificado ≤ atual E qualificado ≤ alvo
+    if col_estoque_kg in resultado.columns and col_alvo_kg in resultado.columns:
+        atual_serie = resultado[col_estoque_kg].fillna(0)
+        alvo_serie = resultado[col_alvo_kg].fillna(0)
+        estoque_qualificado_kg = float(np.minimum(atual_serie, alvo_serie).sum())
+    else:
+        estoque_qualificado_kg = 0.0
+
+    # Máscara de qualificados mantida para contagem de SKUs (risco OK, sem excesso)
+    acoes_excesso = {"Reduzir estoque", "Produzir sob pedido / reduzir estoque"}
+    qualificados_mask = (resultado["risco_ruptura"] == "OK") & (~acao.isin(acoes_excesso))
 
     cap = capacidade_maxima_kg if capacidade_maxima_kg > 0 else 1
 
