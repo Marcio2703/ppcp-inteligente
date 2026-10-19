@@ -1199,7 +1199,10 @@ def calcular_estoque_qualificado(resultado, capacidade_maxima_kg=900_000):
         if "ação_recomendada" in resultado.columns
         else resultado.get("ação recomendada", pd.Series([""] * total))
     )
-    qualificados_mask = (resultado["risco_ruptura"] == "OK") & (acao != "Reduzir estoque")
+    # SKUs qualificados: risco OK e sem excesso (exclui "Reduzir estoque" e
+    # "Produzir sob pedido / reduzir estoque", pois ambos indicam excesso de estoque)
+    acoes_excesso = {"Reduzir estoque", "Produzir sob pedido / reduzir estoque"}
+    qualificados_mask = (resultado["risco_ruptura"] == "OK") & (~acao.isin(acoes_excesso))
 
     # KPIs de capacidade física
     col_estoque_kg = "estoque atual kg"
@@ -1213,9 +1216,11 @@ def calcular_estoque_qualificado(resultado, capacidade_maxima_kg=900_000):
         resultado[col_alvo_kg].fillna(0).sum()
     ) if col_alvo_kg in resultado.columns else 0.0
 
+    # Estoque qualificado = soma dos ALVOS dos SKUs qualificados
+    # (usa alvo, não atual, para garantir que qualificado ≤ alvo total)
     estoque_qualificado_kg = float(
-        resultado.loc[qualificados_mask, col_estoque_kg].fillna(0).sum()
-    ) if col_estoque_kg in resultado.columns else 0.0
+        resultado.loc[qualificados_mask, col_alvo_kg].fillna(0).sum()
+    ) if col_alvo_kg in resultado.columns else 0.0
 
     cap = capacidade_maxima_kg if capacidade_maxima_kg > 0 else 1
 
